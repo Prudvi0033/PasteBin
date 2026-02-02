@@ -1,4 +1,4 @@
-import { model, Schema } from "mongoose";
+import { model, models, Schema } from "mongoose";
 
 const pasteSchema = new Schema(
   {
@@ -19,7 +19,7 @@ const pasteSchema = new Schema(
     expiresAt: {
       type: Date,
       default: null,
-      index: true
+      index: {expireAfterSeconds: 0}
     },
 
     maxViews: {
@@ -39,6 +39,6 @@ const pasteSchema = new Schema(
   }
 );
 
-const Paste = model("Paste", pasteSchema)
+const Paste = models.Paste || model("Paste", pasteSchema);
 
 export default Paste
