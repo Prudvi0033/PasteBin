@@ -1,8 +1,11 @@
 import React from 'react'
+import Home from './components/Home'
 
 const Page = async () => {
   return (
-    <div>page</div>
+    <div className='bg-white min-h-screen w-full flex items-start justify-center'>
+      <Home/>
+    </div>
   )
 }
 
