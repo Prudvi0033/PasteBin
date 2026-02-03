@@ -1,8 +1,8 @@
-"use client";
-
-import axios from "axios";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { connectDb } from "@/app/lib/db";
+import Paste from "@/app/lib/paste.model";
+import { getNow } from "@/app/lib/ttl";
+import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 
 type PasteResponse = {
   content: string;
@@ -10,54 +10,79 @@ type PasteResponse = {
   expires_at: string | null;
 };
 
-export default function Page() {
-  const { id } = useParams<{ id: string }>();
-
-  const [data, setData] = useState<PasteResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!id) return;
-
-    const getPaste = async () => {
-      try {
-        const res = await axios.get(`/api/pastes/${id}`, {
-          headers: { "Cache-Control": "no-store" },
-        });
-        setData(res.data);
-      } catch {
-        setError("Paste not found or expired");
-      } finally {
-        setLoading(false);
+async function getPaste(id: string): Promise<PasteResponse | null> {
+  try {
+    await connectDb();
+    
+    // Get headers for test mode
+    const headersList = await headers();
+    const testNowMs = headersList.get("x-test-now-ms");
+    
+    // Create a mock request object for getNow
+    const mockReq = {
+      headers: {
+        get: (name: string) => {
+          if (name === "x-test-now-ms") return testNowMs;
+          return null;
+        }
       }
+    } as Request;
+    
+    const now = getNow(mockReq);
+
+    const paste = await Paste.findOneAndUpdate(
+      {
+        _id: id,
+        $and: [
+          {
+            $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+          },
+          {
+            $or: [
+              { maxViews: null },
+              { $expr: { $lt: ["$viewsUsed", "$maxViews"] } },
+            ],
+          },
+        ],
+      },
+      { $inc: { viewsUsed: 1 } },
+      { new: true },
+    );
+
+    if (!paste) {
+      return null;
+    }
+
+    return {
+      content: paste.content,
+      remaining_views:
+        paste.maxViews === null
+          ? null
+          : Math.max(0, paste.maxViews - paste.viewsUsed),
+      expires_at: paste.expiresAt,
     };
-
-    getPaste();
-  }, [id]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-gray-700">
-        Loading…
-      </div>
-    );
+  } catch (error) {
+    console.error(error);
+    return null;
   }
+}
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-red-600">
-        {error}
-      </div>
-    );
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const data = await getPaste(id);
+
+  if (!data) {
+    notFound();
   }
-
-  if (!data) return null;
 
   return (
     <main className="min-h-screen bg-white flex justify-center items-start pt-24 px-4">
       <div className="w-full max-w-xl bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-        {/* Content */}
+        {/* Content - escapeHtml not needed, React auto-escapes */}
         <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm text-gray-900 bg-gray-50 p-4 rounded-md border border-gray-200">
           {data.content}
         </pre>
