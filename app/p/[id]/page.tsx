@@ -13,45 +13,35 @@ type PasteResponse = {
 async function getPaste(id: string): Promise<PasteResponse | null> {
   try {
     await connectDb();
-    
-    // Get headers for test mode
+
     const headersList = await headers();
     const testNowMs = headersList.get("x-test-now-ms");
-    
-    // Create a mock request object for getNow
+
     const mockReq = {
       headers: {
-        get: (name: string) => {
-          if (name === "x-test-now-ms") return testNowMs;
-          return null;
-        }
-      }
+        get: (name: string) =>
+          name === "x-test-now-ms" ? testNowMs : null,
+      },
     } as Request;
-    
+
     const now = getNow(mockReq);
 
-    const paste = await Paste.findOneAndUpdate(
-      {
-        _id: id,
-        $and: [
-          {
-            $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
-          },
-          {
-            $or: [
-              { maxViews: null },
-              { $expr: { $lt: ["$viewsUsed", "$maxViews"] } },
-            ],
-          },
-        ],
-      },
-      { $inc: { viewsUsed: 1 } },
-      { new: true },
-    );
+    const paste = await Paste.findOne({
+      _id: id,
+      $and: [
+        {
+          $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+        },
+        {
+          $or: [
+            { maxViews: null },
+            { $expr: { $lt: ["$viewsUsed", "$maxViews"] } },
+          ],
+        },
+      ],
+    });
 
-    if (!paste) {
-      return null;
-    }
+    if (!paste) return null;
 
     return {
       content: paste.content,
@@ -59,10 +49,12 @@ async function getPaste(id: string): Promise<PasteResponse | null> {
         paste.maxViews === null
           ? null
           : Math.max(0, paste.maxViews - paste.viewsUsed),
-      expires_at: paste.expiresAt,
+      expires_at: paste.expiresAt
+        ? paste.expiresAt.toISOString()
+        : null,
     };
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     return null;
   }
 }
@@ -82,7 +74,7 @@ export default async function Page({
   return (
     <main className="min-h-screen bg-white flex justify-center items-start pt-24 px-4">
       <div className="w-full max-w-xl bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-        {/* Content - escapeHtml not needed, React auto-escapes */}
+        {/* Content - React auto-escapes */}
         <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm text-gray-900 bg-gray-50 p-4 rounded-md border border-gray-200">
           {data.content}
         </pre>
